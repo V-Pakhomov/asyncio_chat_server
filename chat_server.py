@@ -1,4 +1,5 @@
 import asyncio
+from colors import *
 
 class Server(asyncio.Protocol):
 
@@ -6,6 +7,21 @@ class Server(asyncio.Protocol):
 	private_chats = {}
 	transports = {}
 	names = {}
+
+	def create_private_chat(self, peername):
+		if not len(self.free_users):
+			self.free_users.append(peername)
+			self.transport.write(b"Waiting for chat...\n")
+		else:
+			teammate = self.free_users.pop(0)
+			self.private_chats[peername] = teammate
+			self.private_chats[teammate] = peername
+			self.transports[peername].write(
+				f"{GREEN}You are now chatting with {self.names[teammate]}!{RESET}\n".encode()
+			)
+			self.transports[teammate].write(
+				f"{GREEN}You are now chatting with {self.names[peername]}!{RESET}\n".encode()
+			)
 
 	def set_name(self, peername, name):
 		name = name[:-2]
@@ -16,10 +32,11 @@ class Server(asyncio.Protocol):
 		peername = transport.get_extra_info('peername')
 		self.transports[peername] = transport
 		print(f'Connection from {peername}')
-		transport.write(b"Enter your name please\n")
+		transport.write(f"{BLUE}Enter your name please{RESET}\n".encode())
 
 	def connection_lost(self, exc):
 		peername = self.transport.get_extra_info('peername')
+		print(f'Connection lost with {peername}')
 		del self.transports[peername]
 		if peername in self.free_users:
 			self.free_users.remove(peername)
@@ -27,12 +44,12 @@ class Server(asyncio.Protocol):
 			return None
 		teammate = self.private_chats[peername]
 		self.transports[teammate].write(
-			f"Sorry, but {self.names[peername]} has disconnected :(\n".encode()
+			f"{RED}Sorry, but {self.names[peername]} has disconnected :({RESET}\n".encode()
 		)
 		del self.names[peername]
 		del self.private_chats[peername]
 		del self.private_chats[teammate]
-		self.free_users.append(teammate)
+		self.create_private_chat(teammate)
 
 	def data_received(self, data):
 		peername = self.transport.get_extra_info('peername')
@@ -43,22 +60,10 @@ class Server(asyncio.Protocol):
 		print(f'Recieved data from {peername}: {message}')
 		if not peername in self.names:
 			self.set_name(peername, message)
-			if not len(self.free_users):
-				self.free_users.append(peername)
-				self.transport.write(b"Waiting for chat...\n")
-			else:
-				teammate = self.free_users.pop(0)
-				self.transport.write(
-					f"You are now chatting with {self.names[teammate]}!\n".encode()
-				)
-				self.transports[teammate].write(
-					f"You are now chatting with {self.names[peername]}!\n".encode()
-				)
-				self.private_chats[peername] = teammate
-				self.private_chats[teammate] = peername
+			self.create_private_chat(peername)
 			return None
 		if not peername in self.private_chats:
-			self.transport.write(b"You aren't chatting yet :(\n")
+			self.transport.write(f"{RED}You aren't chatting yet :({RESET}\n")
 		else:
 			teammate = self.private_chats[peername]
 			self.transports[teammate].write(data)
